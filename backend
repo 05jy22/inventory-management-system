@@ -1,0 +1,278 @@
+from cryptography.fernet import Fernet
+import mysql.connector
+from tkinter import messagebox
+
+cipherKey = "".encode()
+accessStatus = False
+
+searchedItems = []
+
+reportPullOut = []
+listOfDates = []
+
+class InventoryManagementSystem:
+
+    def init(self):
+        self.connectToSQL()
+
+    def connectToSQL(self):
+        try:
+            self.SQLConnection = mysql.connector.connect(
+                host="localhost",
+                user="",
+                password="",
+                database="")
+
+        except:
+            print("ERROR")
+            # messagebox.showwarning("SQL Connection Error", "Please contact network administrator")
+            # return
+
+    # DECRYPTION----------------------------------------------------------------------------------
+    def signIn(self, username, password, action, change, new):
+        global cipherKey, accessStatus
+        try:
+            self.connectToSQL()
+
+            sqlCursor = self.SQLConnection.cursor()
+            sqlCommand = "SELECT Username, Password FROM accounts WHERE Username LIKE %s"
+            sqlValues = (username + '%',)
+            sqlCursor.execute(sqlCommand, sqlValues)
+            selectAccount = sqlCursor.fetchall()
+            sqlCursor.close()
+            self.SQLConnection.close()
+
+            if selectAccount:
+                for eachResult in selectAccount:
+                    passwordEncryption = eachResult[1]
+                    passWord = str(passwordEncryption).encode()
+                    prepareKey = Fernet(cipherKey)
+                    decryptedPass = prepareKey.decrypt(passWord).decode()
+                    passwordEncrypted = decryptedPass
+
+                    if action == 0:
+                        if password == passwordEncrypted:
+                            accessStatus = True
+                            accountStatus()
+                    else:
+                        if password != passwordEncrypted:
+                            messagebox.showerror("Error", "Incorrect password.")
+                        elif action == 1:
+                            try:
+                                cipherMode = Fernet(cipherKey)
+                                encryptedPassword = cipherMode.encrypt(change.encode())
+                                self.connectToSQL()
+
+                                sqlCursor = self.SQLConnection.cursor()
+                                sqlCommand = "UPDATE accounts SET Password = %s WHERE Username = %s"
+                                sqlValues = (encryptedPassword, username)
+
+                                sqlCursor.execute(sqlCommand, sqlValues)
+                                self.SQLConnection.commit()
+                                sqlCursor.close()
+                                self.SQLConnection.close()
+
+                                messagebox.showinfo("Change Password", "Password successfully changed.")
+
+                            except:
+                                messagebox.showwarning("SQL Connection Error", "Please contact network administrator")
+                                return
+                        elif action == 2:
+                            if eachResult[0] != username:
+                                messagebox.showwarning("Error", "Old username is incorrect")
+                            else:
+                                try:
+                                    self.connectToSQL()
+
+                                    sqlCursor = self.SQLConnection.cursor()
+                                    sqlCommand = "UPDATE accounts SET Username = %s WHERE Username = %s"
+                                    sqlValues = (new, username)
+
+                                    sqlCursor.execute(sqlCommand, sqlValues)
+                                    self.SQLConnection.commit()
+                                    sqlCursor.close()
+                                    self.SQLConnection.close()
+
+                                    messagebox.showinfo("Change Username", "Username successfully changed.")
+                                except:
+                                    messagebox.showwarning("SQL Connection Error", "Please contact network administrator")
+                                    return
+            # else:
+            #     messagebox.showinfo("Permission", "Username and Password did not match... \n\n \t Access Denied")
+        except:
+            messagebox.showwarning("SQL Connection Error", "Please contact network administrator")
+            return
+
+    # ==================================================================================================================
+    def addItems(self, category, date, pname, quantity, price):
+        try:
+            self.connectToSQL()
+            sqlCursor = self.SQLConnection.cursor()
+            sqlCommand = "INSERT INTO allproducts (Transaction, Category, ProductName, Quantity, Price) VALUES (%s, %s, %s, %s, %s)"
+            sqlValues = (date, category, pname, quantity, price)
+            sqlCursor.execute(sqlCommand, sqlValues)
+            self.SQLConnection.commit()
+            sqlCursor.close()
+            self.SQLConnection.close()
+            messagebox.showinfo("Add Item", "Item was added successfully.")
+
+        except:
+            messagebox.showwarning("SQL Connection Error", "Please contact network administrator")
+            return
+
+    def searchItem(self, category, pname, products):
+        global searchedItems
+        self.connectToSQL()
+        try:
+            inputCategory = category.replace(" ", "").lower()
+            categoryLen = len(inputCategory)
+            inputSearch = pname
+            SQLCursor = self.SQLConnection.cursor()
+
+            # FOR BUTTONS ONLY
+            if categoryLen > 0 and len(inputSearch) == 0 and products == 0:
+                searchedItems.clear()
+                sqlCommand = "SELECT ProductName, Quantity, Price, Category FROM allproducts WHERE Category LIKE '{}%'".format(category)
+                SQLCursor.execute(sqlCommand)
+                selectResultPName = SQLCursor.fetchall()
+                if selectResultPName:
+                    for eachResult in selectResultPName:
+                        searchedItems.append(eachResult)
+                else:
+                    messagebox.showwarning("Process", "Category is not in the system\nor item does not exist.")
+                    return
+            # SELECT ALL PRODUCTS
+            elif products == 1:
+                searchedItems.clear()
+                sqlCommand = "SELECT ProductName, Quantity, Price FROM allproducts"
+                SQLCursor.execute(sqlCommand)
+                selectResultPName = SQLCursor.fetchall()
+
+                if selectResultPName:
+                    for eachResult in selectResultPName:
+                        searchedItems.append(eachResult)
+                else:
+                    messagebox.showwarning("Process", "Category is not in the system\nor item does not exist.")
+                    return
+            SQLCursor.close()
+            self.SQLConnection.close()
+
+        except:
+            print("ERROR")
+            # messagebox.showwarning("SQL Connection Error", "Please contact network administrator")
+            # return
+
+    def updateItem(self, date, category, pname, quantity, price):
+        askYesOrNo = messagebox.askyesno("Transaction", "Are you sure you want to update this item?")
+
+        if askYesOrNo == True:
+            try:
+                self.connectToSQL()
+                sqlCursor = self.SQLConnection.cursor()
+                sqlCommand = "UPDATE allproducts SET Transaction = %s, Category = %s, ProductName = %s, Quantity = %s, Price = %s WHERE ProductName = %s"
+                sqlValues = (date, category, pname, quantity, price, pname)
+
+                sqlCursor.execute(sqlCommand, sqlValues)
+                self.SQLConnection.commit()
+                sqlCursor.close()
+                self.SQLConnection.close()
+                messagebox.showinfo("Update Item", "The item was successfully updated.")
+            except:
+                messagebox.showwarning("SQL Connection Error", "Please contact network administrator")
+                return
+
+    def deleteItem(self, pname):
+        askYesOrNo = messagebox.askyesno("Transaction", "Are you sure you want to delete this item?")
+
+        if askYesOrNo == True:
+            try:
+                inputSearch = pname
+
+                self.connectToSQL()
+                sqlCursor = self.SQLConnection.cursor()
+                sqlCommand = "DELETE FROM allproducts WHERE ProductName = '{}'".format(inputSearch)
+                sqlCursor.execute(sqlCommand)
+                self.SQLConnection.commit()
+                sqlCursor.close()
+                messagebox.showinfo("Transaction successful.", "Item was deleted successfully.")
+            except:
+                messagebox.showwarning("SQL Connection Error", "Please contact network administrator")
+                return
+
+    def salesUpdate(self, sales):
+        salesTransaction = sales
+        print("1", salesTransaction)
+        salesIndex = 0
+        stockDecIndex = 0
+        lenSales = len(salesTransaction)
+        listTuple = []
+        stockDecrease = []          # For allproducts table (to update no. of stocks)
+
+        while lenSales > 0:
+            listPerItem = [salesTransaction[salesIndex], salesTransaction[salesIndex + 1],
+                           salesTransaction[salesIndex + 2], salesTransaction[salesIndex + 4],
+                           salesTransaction[salesIndex + 3]]
+            listTuple.append(tuple(listPerItem))
+
+            decQtyPerItem = [salesTransaction[stockDecIndex + 5], salesTransaction[stockDecIndex]]
+            stockDecrease.append(tuple(decQtyPerItem))
+
+            salesIndex += 6
+            stockDecIndex += 6
+            lenSales -= 6
+        print(listTuple)
+
+        try:
+            self.connectToSQL()
+            sqlCursor = self.SQLConnection.cursor()
+            sqlCommand = "INSERT INTO salestransaction (ProductName, TrackNumber, SalesTransactionDate, OrderQuantity, ItemPrice) VALUES (%s, %s, %s, %s, %s)"
+            sqlValues = listTuple
+            sqlCursor.executemany(sqlCommand, sqlValues)
+            self.SQLConnection.commit()
+            sqlCursor.close()
+            self.SQLConnection.close()
+
+        except:
+            messagebox.showwarning("SQL Connection Error", "Please contact network administrator")
+            return
+        else:
+            self.connectToSQL()
+            sqlCursor2 = self.SQLConnection.cursor()
+            sqlCommand2 = "UPDATE allproducts SET Quantity = %s WHERE ProductName = %s"
+            sqlCursor2.executemany(sqlCommand2, stockDecrease)
+            sqlCursor2.close()
+            self.SQLConnection.close()
+            messagebox.showinfo("Transaction Status", "Successful Transaction.")
+
+    def getSalesData(self, date, collect):
+        try:
+            self.connectToSQL()
+            sqlCursor = self.SQLConnection.cursor()
+            if collect == 1:
+                sqlCommand = "SELECT SalesTransactionDate FROM salestransaction"
+                sqlCursor.execute(sqlCommand)
+                datesResult = sqlCursor.fetchall()
+                if datesResult:
+                    for eachDate in datesResult:
+                        if eachDate not in listOfDates:
+                            listOfDates.append(eachDate)
+
+            if date:
+                reportPullOut.clear()
+                sqlCommand = "SELECT ProductName, ItemPrice, OrderQuantity FROM salestransaction WHERE SalesTransactionDate LIKE '{}%'".format(date)
+                sqlCursor.execute(sqlCommand)
+                resultPullOut = sqlCursor.fetchall()
+
+                if resultPullOut:
+                    for eachResult in resultPullOut:
+                        reportPullOut.append(eachResult)
+
+        except:
+            messagebox.showwarning("SQL Connection Error", "Please contact network administrator")
+            return
+
+def accountStatus():
+    global accessStatus
+    if accessStatus == True:
+        return True
+    return
